@@ -1,15 +1,20 @@
-import { BellIcon, HomeIcon, UserIcon } from "lucide-react";
+import { HomeIcon, UserIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { SignInButton, UserButton } from "@clerk/nextjs";
 import ModeToggle from "./ModeToggler";
 import { currentUser } from "@clerk/nextjs/server";
+import { MessagesNavLink } from "@/components/messages/MessagesNavLink";
+import { NotificationsNavLink } from "@/components/notifications/NotificationsNavLink";
+import SearchBar from "@/components/search/SearchBar";
 
-async function DesktopNavbar() {
+async function DesktopNavbar({ dbUserId }: { dbUserId: string | null }) {
     const user = await currentUser();
 
     return (
         <div className="hidden md:flex items-center space-x-4">
+            <SearchBar className="w-48 lg:w-64" />
+
             <ModeToggle />
 
             <Button variant="ghost" className="flex items-center gap-2" asChild>
@@ -21,12 +26,8 @@ async function DesktopNavbar() {
 
             {user ? (
                 <>
-                    <Button variant="ghost" className="flex items-center gap-2" asChild>
-                        <Link href="/notifications">
-                            <BellIcon className="w-4 h-4" />
-                            <span className="hidden lg:inline">Notifications</span>
-                        </Link>
-                    </Button>
+                    <NotificationsNavLink dbUserId={dbUserId} />
+                    <MessagesNavLink dbUserId={dbUserId} />
                     <Button variant="ghost" className="flex items-center gap-2" asChild>
                         <Link
                             href={`/profile/${

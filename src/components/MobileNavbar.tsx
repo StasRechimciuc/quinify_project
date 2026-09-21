@@ -1,28 +1,49 @@
 "use client";
 
 import {
-    BellIcon,
     HomeIcon,
     LogOutIcon,
     MenuIcon,
     MoonIcon,
+    SearchIcon,
     SunIcon,
     UserIcon,
 } from "lucide-react";
 import {Button} from "@/components/ui/button";
 import {Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger} from "@/components/ui/sheet";
 import {useState} from "react";
-import {useAuth, SignInButton, SignOutButton} from "@clerk/nextjs";
+import {useUser, SignInButton, SignOutButton} from "@clerk/nextjs";
 import {useTheme} from "next-themes";
 import Link from "next/link";
+import {MessagesNavLink} from "@/components/messages/MessagesNavLink";
+import {NotificationsNavLink} from "@/components/notifications/NotificationsNavLink";
+import SearchBar from "@/components/search/SearchBar";
 
-function MobileNavbar() {
+function MobileNavbar({dbUserId}: { dbUserId: string | null }) {
     const [showMobileMenu, setShowMobileMenu] = useState(false);
-    const {isSignedIn} = useAuth();
+    const [showSearch, setShowSearch] = useState(false);
+    const {isSignedIn, user} = useUser();
     const {theme, setTheme} = useTheme();
 
     return (
         <div className="flex md:hidden items-center space-x-2">
+            <Sheet open={showSearch} onOpenChange={setShowSearch}>
+                <SheetTrigger asChild>
+                    <Button variant="ghost" size="icon">
+                        <SearchIcon className="h-5 w-5"/>
+                        <span className="sr-only">Search</span>
+                    </Button>
+                </SheetTrigger>
+                <SheetContent side="top">
+                    <SheetHeader>
+                        <SheetTitle>Search</SheetTitle>
+                    </SheetHeader>
+                    <div className="mt-4">
+                        <SearchBar autoFocus onNavigate={() => setShowSearch(false)}/>
+                    </div>
+                </SheetContent>
+            </Sheet>
+
             <Button
                 variant="ghost"
                 size="icon"
@@ -56,14 +77,14 @@ function MobileNavbar() {
 
                         {isSignedIn ? (
                             <>
+                                <NotificationsNavLink dbUserId={dbUserId} variant="mobile"/>
+                                <MessagesNavLink dbUserId={dbUserId} variant="mobile"/>
                                 <Button variant="ghost" className="flex items-center gap-3 justify-start" asChild>
-                                    <Link href="/notifications">
-                                        <BellIcon className="w-4 h-4"/>
-                                        Notifications
-                                    </Link>
-                                </Button>
-                                <Button variant="ghost" className="flex items-center gap-3 justify-start" asChild>
-                                    <Link href="/profile">
+                                    <Link
+                                        href={`/profile/${
+                                            user?.username ?? user?.emailAddresses[0]?.emailAddress.split("@")[0]
+                                        }`}
+                                    >
                                         <UserIcon className="w-4 h-4"/>
                                         Profile
                                     </Link>

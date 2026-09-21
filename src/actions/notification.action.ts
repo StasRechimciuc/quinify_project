@@ -48,13 +48,31 @@ export async function getNotifications() {
     }
 }
 
+export async function getUnreadNotificationCount() {
+    const userId = await getDbUserById();
+    if (!userId) return 0;
+
+    try {
+        return await prisma.notification.count({
+            where: {userId, read: false},
+        });
+    } catch (error) {
+        console.error("Error counting unread notifications:", error);
+        return 0;
+    }
+}
+
 export async function markNotificationsAsRead(notificationIds: string[]) {
     try {
+        const userId = await getDbUserById();
+        if (!userId) return { success: false };
+
         await prisma.notification.updateMany({
             where: {
                 id: {
                     in: notificationIds,
                 },
+                userId,
             },
             data: {
                 read: true,

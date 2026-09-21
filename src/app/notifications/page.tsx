@@ -3,6 +3,8 @@
 import {useEffect, useState} from "react";
 import {NotificationsSkeleton} from "@/components/NotificationsSkeleton";
 import {getNotifications, markNotificationsAsRead} from "@/actions/notification.action";
+import {getDbUserById} from "@/actions/user.action";
+import {subscribeShared, unsubscribeShared} from "@/lib/pusher-client";
 import toast from "react-hot-toast";
 import {formatDistanceToNow} from "date-fns";
 import {Avatar, AvatarImage} from "@/components/ui/avatar";
@@ -15,7 +17,10 @@ type Notification = Notifications[number]
 const Notifications = () => {
 
     const [notifications, setNotifications] = useState<Notification[]>([]);
-    const [isLoading, setIsLoading] = useState(false)
+    // Starts true (not false) because a fetch always fires on mount — otherwise
+    // the very first paint briefly shows "No notifications yet" instead of the
+    // loading skeleton, before the effect below flips it.
+    const [isLoading, setIsLoading] = useState(true)
 
     useEffect(() => {
         const fetchNotifications = async () => {
@@ -35,6 +40,26 @@ const Notifications = () => {
         }
 
         fetchNotifications();
+
+        let cancelled = false;
+        let channelName: string | null = null;
+        let channel: ReturnType<typeof subscribeShared> | null = null;
+
+        getDbUserById().then((dbUserId) => {
+            if (!dbUserId || cancelled) return;
+
+            channelName = `private-user-${dbUserId}`;
+            channel = subscribeShared(channelName);
+            channel.bind("new-notification", fetchNotifications);
+        }).catch(() => {});
+
+        return () => {
+            cancelled = true;
+            if (channel && channelName) {
+                channel.unbind("new-notification", fetchNotifications);
+                unsubscribeShared(channelName);
+            }
+        };
     }, []);
 
     const getNotificationIcon = (type: string) => {

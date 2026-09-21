@@ -6,8 +6,12 @@ import {syncUser} from "@/actions/user.action"
 
 async function Navbar() {
 
-    const user = currentUser()
-    if (!!user) await syncUser()
+    const user = await currentUser()
+    let dbUserId: string | null = null;
+    if (user) {
+        const dbUser = await syncUser()
+        dbUserId = dbUser?.id ?? null
+    }
 
     return (
         <nav
@@ -16,12 +20,12 @@ async function Navbar() {
                 <div className="flex items-center justify-between h-16">
                     <div className="flex items-center">
                         <Link href="/" className="text-xl font-bold text-primary font-mono tracking-wider">
-                            Socially
+                            Quinify
                         </Link>
                     </div>
 
-                    <DesktopNavbar/>
-                    <MobileNavbar/>
+                    <DesktopNavbar dbUserId={dbUserId}/>
+                    <MobileNavbar dbUserId={dbUserId}/>
                 </div>
             </div>
         </nav>

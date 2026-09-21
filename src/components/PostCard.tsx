@@ -3,12 +3,13 @@
 import { createComment, deletePost, getPosts, toggleLike } from "@/actions/post.action";
 import { SignInButton, useUser } from "@clerk/nextjs";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { Card, CardContent } from "./ui/card";
 import Link from "next/link";
 import { Avatar, AvatarImage } from "./ui/avatar";
-import { formatDistanceToNow } from "date-fns";
 import { DeleteAlertDialog } from "./DeleteAlertDialog";
+import { RelativeTime } from "./RelativeTime";
 import { Button } from "./ui/button";
 import { HeartIcon, LogInIcon, MessageCircleIcon, SendIcon } from "lucide-react";
 import { Textarea } from "./ui/textarea";
@@ -18,6 +19,7 @@ type Post = Posts[number];
 
 function PostCard({ post, dbUserId }: { post: Post; dbUserId: string | null }) {
     const { user } = useUser();
+    const router = useRouter();
     const [newComment, setNewComment] = useState("");
     const [isCommenting, setIsCommenting] = useState(false);
     const [isLiking, setIsLiking] = useState(false);
@@ -49,6 +51,7 @@ function PostCard({ post, dbUserId }: { post: Post; dbUserId: string | null }) {
             if (result?.success) {
                 toast.success("Comment posted successfully");
                 setNewComment("");
+                router.refresh();
             }
         } catch (error) {
             toast.error("Failed to add comment");
@@ -62,8 +65,10 @@ function PostCard({ post, dbUserId }: { post: Post; dbUserId: string | null }) {
         try {
             setIsDeleting(true);
             const result = await deletePost(post.id);
-            if (result?.success) toast.success("Post deleted successfully");
-            else throw new Error(result?.error);
+            if (result?.success) {
+                toast.success("Post deleted successfully");
+                router.refresh();
+            } else throw new Error(result?.error);
         } catch (error) {
             toast.error("Failed to delete post");
         } finally {
@@ -95,7 +100,7 @@ function PostCard({ post, dbUserId }: { post: Post; dbUserId: string | null }) {
                                     <div className="flex items-center space-x-2 text-sm text-muted-foreground">
                                         <Link href={`/profile/${post.author.username}`}>@{post.author.username}</Link>
                                         <span>•</span>
-                                        <span>{formatDistanceToNow(new Date(post.createdAt))} ago</span>
+                                        <span><RelativeTime date={post.createdAt} suffix=" ago" /></span>
                                     </div>
                                 </div>
 
@@ -172,7 +177,7 @@ function PostCard({ post, dbUserId }: { post: Post; dbUserId: string | null }) {
                         </span>
                                                 <span className="text-sm text-muted-foreground">·</span>
                                                 <span className="text-sm text-muted-foreground">
-                          {formatDistanceToNow(new Date(comment.createdAt))} ago
+                          <RelativeTime date={comment.createdAt} suffix=" ago" />
                         </span>
                                             </div>
                                             <p className="text-sm break-words">{comment.content}</p>

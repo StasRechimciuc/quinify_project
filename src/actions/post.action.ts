@@ -2,7 +2,9 @@
 
 import {getDbUserById} from "@/actions/user.action";
 import {prisma} from "@/lib/prisma";
-import {revalidatePath} from "next/cache";
+import {revalidatePath, revalidateTag, unstable_cache} from "next/cache";
+import {Prisma} from "@prisma/client";
+import {pusherServer} from "@/lib/pusher";
 
 export const createPost = async (content: string, image: string) => {
     const userId = await getDbUserById();
@@ -17,63 +19,74 @@ export const createPost = async (content: string, image: string) => {
         })
 
         revalidatePath("/");
+        revalidateTag("posts");
         return {success: true, post}
     } catch (err) {
         return {success: false, error: "Failed to create post"}
     }
 }
 
-export const getPosts = async () => {
-    try {
-        const posts = await prisma.post.findMany({
-            orderBy: {
-                createdAt: "desc"
-            },
-            include: {
-                author: {
-                    select: {
-                        id: true,
-                        name: true,
-                        image: true,
-                        username: true
-                    }
+// Cached in Next's Data Cache (not just per-request) since the feed is read
+// far more often than it's written to — repeat visits to "/" within the
+// cache window skip the round trip to Postgres entirely. Every mutation that
+// can change what this returns (create/like/comment/delete) calls
+// revalidateTag("posts") right after its write so the cache never serves
+// data older than the mutation that invalidated it.
+export const getPosts = unstable_cache(
+    async () => {
+        try {
+            const posts = await prisma.post.findMany({
+                orderBy: {
+                    createdAt: "desc"
                 },
-                comments: {
-                    include: {
-                        author: {
-                            select: {
-                                id: true,
-                                username: true,
-                                image: true,
-                                name: true
-                            }
+                include: {
+                    author: {
+                        select: {
+                            id: true,
+                            name: true,
+                            image: true,
+                            username: true
                         }
                     },
-                    orderBy: {
-                        createdAt: "asc"
-                    }
-                },
-                likes: {
-                    select: {
-                        userId: true,
+                    comments: {
+                        include: {
+                            author: {
+                                select: {
+                                    id: true,
+                                    username: true,
+                                    image: true,
+                                    name: true
+                                }
+                            }
+                        },
+                        orderBy: {
+                            createdAt: "asc"
+                        }
+                    },
+                    likes: {
+                        select: {
+                            userId: true,
 
 
+                        }
+                    },
+                    _count: {
+                        select: {
+                            likes: true,
+                            comments: true
+                        }
                     }
                 },
-                _count: {
-                    select: {
-                        likes: true,
-                        comments: true
-                    }
-                }
-            },
-        })
-        return posts;
-    } catch (err) {
-        console.log("Error getting posts");
-        return [];
-    }
-}
+            })
+            return posts;
+        } catch (err) {
+            console.log("Error getting posts");
+            return [];
+        }
+    },
+    ["posts"],
+    {tags: ["posts"], revalidate: 60}
+);
 
 export async function toggleLike(postId: string) {
     try {
@@ -109,29 +122,49 @@ export async function toggleLike(postId: string) {
             });
         } else {
             // like and create notification (only if liking someone else's post)
-            await prisma.$transaction([
-                prisma.like.create({
-                    data: {
-                        userId,
-                        postId,
-                    },
-                }),
-                ...(post.authorId !== userId
-                    ? [
-                        prisma.notification.create({
-                            data: {
-                                type: "LIKE",
-                                userId: post.authorId, // recipient (post author)
-                                creatorId: userId, // person who liked
-                                postId,
-                            },
-                        }),
-                    ]
-                    : []),
-            ]);
+            let created = true;
+            try {
+                await prisma.$transaction([
+                    prisma.like.create({
+                        data: {
+                            userId,
+                            postId,
+                        },
+                    }),
+                    ...(post.authorId !== userId
+                        ? [
+                            prisma.notification.create({
+                                data: {
+                                    type: "LIKE",
+                                    userId: post.authorId, // recipient (post author)
+                                    creatorId: userId, // person who liked
+                                    postId,
+                                },
+                            }),
+                        ]
+                        : []),
+                ]);
+            } catch (err) {
+                // Two near-simultaneous clicks can both pass the existingLike
+                // check above; treat "already liked" as a harmless no-op
+                // instead of surfacing it as a failure.
+                const alreadyLiked =
+                    err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
+                if (!alreadyLiked) throw err;
+                created = false;
+            }
+
+            if (created && post.authorId !== userId) {
+                try {
+                    await pusherServer.trigger(`private-user-${post.authorId}`, "new-notification", {});
+                } catch (err) {
+                    console.error("Failed to push like notification:", err);
+                }
+            }
         }
 
         revalidatePath("/");
+        revalidateTag("posts");
         return {success: true};
     } catch (error) {
         console.error("Failed to toggle like:", error);
@@ -159,29 +192,39 @@ export const createComment = async (postId: string, content: string) => {
 
         const [comment] = await prisma.$transaction(
             async (tx) => {
-                const newComment = await prisma.comment.create({
+                const newComment = await tx.comment.create({
                     data: {
                         content,
                         postId,
-                        authorId: post.authorId,
+                        authorId: userId,
                     }
                 })
 
-                const notification = await prisma.notification.create({
-                    data: {
-                        userId,
-                        type: "COMMENT",
-                        creatorId: userId,
-                        postId,
-                        commentId: newComment.id
-                    }
-                })
+                if (post.authorId !== userId) {
+                    await tx.notification.create({
+                        data: {
+                            userId: post.authorId,
+                            type: "COMMENT",
+                            creatorId: userId,
+                            postId,
+                            commentId: newComment.id
+                        }
+                    })
+                }
 
                 return [newComment]
             })
 
+        if (post.authorId !== userId) {
+            try {
+                await pusherServer.trigger(`private-user-${post.authorId}`, "new-notification", {});
+            } catch (err) {
+                console.error("Failed to push comment notification:", err);
+            }
+        }
 
         revalidatePath("/");
+        revalidateTag("posts");
         return {success: true, comment}
     } catch (err) {
         return {success: false, error: "Failed to create comment"};
@@ -204,6 +247,7 @@ export const deletePost = async (postId: string) => {
         })
 
         revalidatePath("/");
+        revalidateTag("posts");
         return {success: true}
     } catch (err) {
         console.log(err)

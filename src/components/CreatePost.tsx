@@ -2,6 +2,7 @@
 
 import {useUser} from "@clerk/nextjs";
 import {useState} from "react";
+import {useRouter} from "next/navigation";
 import {Card, CardContent} from "@/components/ui/card";
 import {Textarea} from "@/components/ui/textarea";
 import {Avatar, AvatarImage} from "@/components/ui/avatar";
@@ -13,6 +14,7 @@ import ImageUpload from "@/components/ImageUpload";
 
 const CreatePost = () => {
     const {user} = useUser();
+    const router = useRouter();
     const [content, setContent] = useState("");
     const [imageUrl, setImageUrl] = useState("")
     const [isPosting, setIsPosting] = useState(false)
@@ -30,6 +32,7 @@ const CreatePost = () => {
                 setShowImageUpload(false)
 
                 toast.success("Post created successfully!")
+                router.refresh()
             }
 
         } catch (err) {

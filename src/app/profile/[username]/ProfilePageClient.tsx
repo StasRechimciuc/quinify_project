@@ -9,14 +9,16 @@ import {
 } from "@/actions/profile.action";
 import {SignInButton, useUser} from "@clerk/nextjs";
 import {useState} from "react";
+import {useRouter} from "next/navigation";
 import toast from "react-hot-toast";
 import {toggleFollow} from "@/actions/user.action";
+import {getOrCreateConversation} from "@/actions/message.action";
 import {formatDate} from "date-fns";
 import {Card, CardContent} from "@/components/ui/card";
 import {Avatar, AvatarImage} from "@/components/ui/avatar";
 import {Separator} from "@/components/ui/separator";
 import {Button} from "@/components/ui/button";
-import {CalendarIcon, EditIcon, FileTextIcon, HeartIcon, LinkIcon, MapPinIcon} from "lucide-react";
+import {CalendarIcon, EditIcon, FileTextIcon, HeartIcon, LinkIcon, MapPinIcon, MessageCircleIcon} from "lucide-react";
 import {Tabs, TabsContent, TabsList, TabsTrigger} from "@/components/ui/tabs";
 import {Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle} from "@/components/ui/dialog";
 import {Label} from "@/components/ui/label";
@@ -42,13 +44,13 @@ const ProfilePageClient = ({
                                likedPosts,
                                isFollowing: initialIsFollowing
                            }: ProfilePageClientProps) => {
-    console.log(user, posts, likedPosts, initialIsFollowing)
-
     const {user: currentUser} = useUser()
+    const router = useRouter()
 
     const [showEditDialog, setShowEditDialog] = useState(false);
-    const [isFollowing, setIsFollowing] = useState(false)
+    const [isFollowing, setIsFollowing] = useState(initialIsFollowing)
     const [isUpdatingFollow, setIsUpdatingFollow] = useState(false)
+    const [isStartingChat, setIsStartingChat] = useState(false)
     const [editForm, setEditForm] = useState({
         name: user.name || "",
         bio: user.bio || "",
@@ -74,14 +76,34 @@ const ProfilePageClient = ({
 
         try {
             setIsUpdatingFollow(true);
-            await toggleFollow(user.id);
-            setIsFollowing(!isFollowing);
+            const res = await toggleFollow(user.id);
+            if (res?.success) {
+                setIsFollowing((prev) => !prev);
+                router.refresh();
+            } else {
+                toast.error(res?.error ?? "Failed to update follow status");
+            }
         } catch (error) {
             toast.error("Failed to update follow status");
         } finally {
             setIsUpdatingFollow(false);
         }
     };
+
+    const handleMessage = async () => {
+        if (!currentUser) return;
+
+        try {
+            setIsStartingChat(true);
+            const conversationId = await getOrCreateConversation(user.id);
+            router.push(`/messages/${conversationId}`);
+        } catch (error) {
+            toast.error("Failed to start conversation");
+        } finally {
+            setIsStartingChat(false);
+        }
+    };
+
     const isOwnProfile =
         currentUser?.username === user.username ||
         currentUser?.emailAddresses[0].emailAddress.split("@")[0] === user.username;
@@ -135,14 +157,25 @@ const ProfilePageClient = ({
                                         Edit Profile
                                     </Button>
                                 ) : (
-                                    <Button
-                                        className="w-full mt-4"
-                                        onClick={handleFollow}
-                                        disabled={isUpdatingFollow}
-                                        variant={isFollowing ? "outline" : "default"}
-                                    >
-                                        {isFollowing ? "Unfollow" : "Follow"}
-                                    </Button>
+                                    <div className="flex gap-2 w-full mt-4">
+                                        <Button
+                                            className="flex-1"
+                                            onClick={handleFollow}
+                                            disabled={isUpdatingFollow}
+                                            variant={isFollowing ? "outline" : "default"}
+                                        >
+                                            {isFollowing ? "Unfollow" : "Follow"}
+                                        </Button>
+                                        <Button
+                                            className="flex-1"
+                                            variant="outline"
+                                            onClick={handleMessage}
+                                            disabled={isStartingChat}
+                                        >
+                                            <MessageCircleIcon className="size-4 mr-2"/>
+                                            Message
+                                        </Button>
+                                    </div>
                                 )}
 
                                 {/* LOCATION & WEBSITE */}
